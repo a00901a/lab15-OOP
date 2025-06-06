@@ -1,0 +1,281 @@
+using System;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Windows.Forms;
+
+namespace FtpClientApp
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        // Метод, який створює та налаштовує FtpWebRequest
+        private FtpWebRequest CreateRequest(string method, string remotePath)
+        {
+            string ftpServer = txtServer.Text.Trim(); // наприклад, "ftp://example.com"
+            string username = txtUsername.Text.Trim();
+            string password = txtPassword.Text;
+            if (!ftpServer.EndsWith("/"))
+                ftpServer += "/";
+
+            var request = (FtpWebRequest)WebRequest.Create(ftpServer + remotePath);
+            request.Method = method;
+            request.Credentials = new NetworkCredential(username, password);
+            request.UseBinary = true;
+            request.KeepAlive = false;
+            request.EnableSsl = false; // якщо потрібно SSL – встановіть true
+            return request;
+        }
+
+        // APPE – дозапис до файлу на сервері
+        private void btnAppend_Click(object sender, EventArgs e)
+        {
+            string localFile = txtLocalPath.Text.Trim();
+            string remoteFile = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.AppendFile, remoteFile);
+                using (Stream requestStream = request.GetRequestStream())
+                using (FileStream fileStream = File.OpenRead(localFile))
+                {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
+                        requestStream.Write(buffer, 0, bytesRead);
+                }
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"APPE завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка APPE: " + ex.Message);
+            }
+        }
+
+        // DELE – видалення файлу
+        private void btnDelete_Click(object sender, EventArgs e)
+        {
+            string remoteFile = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.DeleteFile, remoteFile);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"DELE завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка DELE: " + ex.Message);
+            }
+        }
+
+        // RETR – завантажити файл із сервера
+        private void btnDownload_Click(object sender, EventArgs e)
+        {
+            string remoteFile = txtRemotePath.Text.Trim();
+            string localFile = txtLocalPath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.DownloadFile, remoteFile);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                using (var responseStream = response.GetResponseStream())
+                using (var fileStream = File.Create(localFile))
+                {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                        fileStream.Write(buffer, 0, bytesRead);
+                }
+                MessageBox.Show("RETR завершено успішно.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка RETR: " + ex.Message);
+            }
+        }
+
+        // MDTM – отримати час модифікації файлу
+        private void btnGetModificationTime_Click(object sender, EventArgs e)
+        {
+            string remoteFile = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.GetDateTimestamp, remoteFile);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                {
+                    DateTime modifyDate = response.LastModified;
+                    MessageBox.Show($"Час модифікації: {modifyDate.ToString("yyyy-MM-dd HH:mm:ss")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка MDTM: " + ex.Message);
+            }
+        }
+
+        // SIZE – отримати розмір файлу
+        private void btnGetSize_Click(object sender, EventArgs e)
+        {
+            string remoteFile = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.GetFileSize, remoteFile);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                {
+                    long size = response.ContentLength;
+                    MessageBox.Show($"Розмір файлу: {size} байт");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка SIZE: " + ex.Message);
+            }
+        }
+
+        // NLIST – отримати список імен (файлів/папок без деталізації)
+        private void btnNameList_Click(object sender, EventArgs e)
+        {
+            string remoteDir = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.ListDirectory, remoteDir);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    string names = reader.ReadToEnd();
+                    txtOutput.Text = names;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка NLIST: " + ex.Message);
+            }
+        }
+
+        // LIST – отримати детальний список вмісту (з датами, розмірами тощо)
+        private void btnList_Click(object sender, EventArgs e)
+        {
+            string remoteDir = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.ListDirectoryDetails, remoteDir);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    string details = reader.ReadToEnd();
+                    txtOutput.Text = details;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка LIST: " + ex.Message);
+            }
+        }
+
+        // MKD – створити папку
+        private void btnMakeDirectory_Click(object sender, EventArgs e)
+        {
+            string remoteDir = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.MakeDirectory, remoteDir);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"MKD завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка MKD: " + ex.Message);
+            }
+        }
+
+        // RMD – видалити папку
+        private void btnRemoveDirectory_Click(object sender, EventArgs e)
+        {
+            string remoteDir = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.RemoveDirectory, remoteDir);
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"RMD завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка RMD: " + ex.Message);
+            }
+        }
+
+        // RENAME – перейменувати файл або папку (потрібно два запити: один для встановлення імені початку, інший – нове ім’я)
+        private void btnRename_Click(object sender, EventArgs e)
+        {
+            string remoteOld = txtRemotePath.Text.Trim(); // в цьому полі вводиться старий шлях
+            string remoteNew = txtNewRemotePath.Text.Trim(); // в цьому полі – новий шлях
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.Rename, remoteOld);
+                request.RenameTo = remoteNew;
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"RENAME завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка RENAME: " + ex.Message);
+            }
+        }
+
+        // STOR – закинути (завантажити) файл на сервер
+        private void btnUpload_Click(object sender, EventArgs e)
+        {
+            string localFile = txtLocalPath.Text.Trim();
+            string remoteFile = txtRemotePath.Text.Trim();
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.UploadFile, remoteFile);
+                using (Stream requestStream = request.GetRequestStream())
+                using (FileStream fileStream = File.OpenRead(localFile))
+                {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
+                        requestStream.Write(buffer, 0, bytesRead);
+                }
+                using (var response = (FtpWebResponse)request.GetResponse())
+                    MessageBox.Show($"STOR завершено. Статус: {response.StatusDescription}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка STOR: " + ex.Message);
+            }
+        }
+
+        // STOU – завантаження з генерацією унікального імені (якщо FTP-сервер підтримує)
+        private void btnUploadUnique_Click(object sender, EventArgs e)
+        {
+            string localFile = txtLocalPath.Text.Trim();
+            string remoteDir = txtRemotePath.Text.Trim(); // вказуємо папку, в якій створюється унікальний файл
+            try
+            {
+                var request = CreateRequest(WebRequestMethods.Ftp.UploadFileWithUniqueName, remoteDir);
+                using (Stream requestStream = request.GetRequestStream())
+                using (FileStream fileStream = File.OpenRead(localFile))
+                {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
+                        requestStream.Write(buffer, 0, bytesRead);
+                }
+                using (var response = (FtpWebResponse)request.GetResponse())
+                {
+                    string createdName = response.ResponseUri.Segments[response.ResponseUri.Segments.Length - 1];
+                    MessageBox.Show($"STOU завершено. Унікальне ім’я: {createdName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка STOU: " + ex.Message);
+            }
+        }
+    }
+}
